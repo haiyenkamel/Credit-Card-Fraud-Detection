@@ -3,7 +3,7 @@ R programming
 
 Objective: 
 
-The purpose of this project is to build a model to predict fraudulent transactions.
+The purpose of this project is to train a machine learning algorithm on the dataset and build a model to predict fraudulent transactions. Given this is a highly unbalanced dataset, we will be using the Area Under the Precision-Recall Curve (AUC) to the model accuracy. Confusion matrix accuracy is not meaningful for unbalanced classification.
 
 Kaggle Dataset description:
 
