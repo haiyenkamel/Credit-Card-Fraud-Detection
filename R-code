@@ -1,0 +1,330 @@
+
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(lubridate)
+library(corrplot)
+library(RColorBrewer)
+
+
+creditcard <- read.csv("C:/Users/hkamel/Documents/Data Science course/creditcard.csv",header=FALSE)
+
+str(creditcard)
+
+summary(creditcard)
+
+# Check number of rows and columns
+dim(creditcard)
+284807     31
+
+head(creditcard)
+tail(creditcard)
+
+# rename column v1, v30 
+creditcard <- creditcard %>%
+  rename(
+    Time = V1,
+    Amount = V30,
+    Class = V31
+  )%>%
+  mutate(Day = Time/86400)
+
+creditcard$Day <- ifelse(creditcard$Day>1,2,1)
+# Make dependent variable as a factor (categorical)
+creditcard$Class <- as.factor(creditcard$Class)
+levels(creditcard$Class) <- c("No Fraud","Fraud")
+
+attach(creditcard)
+
+# No missing values
+# Mean amount: 88.35
+# Max: 25691.16 -> highly skewed
+summary(creditcard)
+
+######################################## Data Visualization ########################################
+
+# More variability in transaction values for Day 2. 
+ggplot(data=creditcard,mapping = aes(x=factor(Day),y=Amount))+
+  geom_boxplot()+
+  labs(title = "Transactions per Day",
+       x = "Day")+ 
+  scale_x_discrete(labels = paste("Day",c(1:2),sep = " "))
+
+# More variability in transaction values for Day 2. 
+ggplot(data=creditcard,mapping = aes(x=factor(Class),y=Amount))+
+  geom_boxplot()+
+  labs(title = "Transactions per Class",
+       x = "Day")+ 
+  scale_x_discrete(labels = c("No Fraud","Fraud"))
+
+# More variability in non-fraudulent transactions. 
+creditcard %>%
+  ggplot(aes(x = Hour, fill = factor(Class))) + geom_histogram(bins = 100) +
+  facet_grid(Class~.,scales = "free_y")+
+  labs(title = "Time in seconds since first transaction",
+       y= "Number of transactions",
+       fill = "Class")+
+  theme(legend.position="top")+
+  scale_fill_manual(values = c("#d8b365", "#5ab4ac"),labels = c("No Fraud", "Fraud"))+
+  theme_light()
+
+# Class distribution
+ggplot(data=creditcard, aes(x = as.factor(Class), 
+                            y = prop.table(stat(count)), 
+                            fill = as.factor(Class),
+                            label = scales::percent(prop.table(stat(count))))
+)+
+  geom_bar() + 
+  geom_text(stat = 'count',
+            position = position_dodge(.9), 
+            vjust = -0.5, 
+            size = 3) + 
+  scale_x_discrete(labels = c("No Fraud", "Fraud"))+
+  scale_y_continuous(labels = scales::percent)+
+  labs(x = 'Class', y = 'Percentage') +
+  ggtitle("Distribution of class labels")+
+  theme(legend.position = "none")
+
+
+
+
+creditcard %>%
+  group_by(Class) %>%
+  summarise(Average = mean(Amount),
+            Median = median(Amount), 
+            Min = min(Amount),
+            Max= max(Amount))
+
+Class       Average Median   Min    Max
+No Fraud       88.3   22       0    25691
+Fraud          122.   9.25     0     2126
+
+creditcard %>%
+  group_by(Day) %>%
+  summarise(Average = mean(Amount),
+            Median = median(Amount), 
+            Min = min(Amount),
+            Max= max(Amount))
+
+Day Average Median   Min    Max
+1     90.4   23.4     0    19657
+2     86.2   20.3     0    25691
+
+fraud <- creditcard %>%
+              filter(Class == "Fraud") %>%
+              arrange(desc(Amount))
+
+
+ggplot(data=fraud, aes(as.factor(Day), Amount)) +
+  geom_boxplot()+
+  labs(title = "Transaction values of Fraud per Day",
+       x = "Day")
+
+
+# split dataset into train & test set
+
+index = sample(1:nrow(creditcard),nrow(creditcard) * 0.7)
+train = creditcard[index,]
+test = creditcard[-index,]
+
+# 0 is fraud, 1 is not
+# highly imbalanced
+round(prop.table(table(Class)),3) # 0 is fraud, 1 is not
+Class
+No Fraud    Fraud 
+0.998    0.002 
+
+
+# 492 fraud out of 284,315 transactions
+Class
+No Fraud    Fraud 
+284315      492 
+
+# Using below methods to balance data set:
+# Oversampling
+# Undersampling
+# SMOTE (Synthetic Minority Over-sampling Technique)
+# ROSE
+
+# Undersampling
+install.packages("ROSE")
+library(ROSE)
+
+set.seed(100)
+down_train <- ovun.sample(Class~., data=train,
+                          p=0.5,seed=1, method="under")$data
+table(down_train$Class)
+No Fraud  Fraud 
+315      328 
+
+
+# Oversampling
+
+set.seed(100)
+up_train <- ovun.sample(Class~., data=train,
+                          p=0.5,seed=1, method="over")$data
+table(up_train$Class)
+No Fraud    Fraud 
+199036    199304 
+
+# ROSE
+set.seed(100)
+rose_train <- ROSE(Class~., data  = train)$data     
+
+table(rose_train$Class) 
+No Fraud    Fraud 
+     99849 99515
+
+
+#SMOTE
+library(DMwR)
+set.seed(100)
+train$Class <- as.factor(train$Class)
+smote_train <- SMOTE(Class~., data=train)
+
+table(smote_train$Class)
+No Fraud    Fraud 
+  1312      984
+
+par(mfrow=c(2,2))
+
+
+ggplot(data=train)+
+  geom_point(mapping = aes(x=Time,y=Amount,color=Class))+
+  scale_colour_manual(values = c("#d8b365", "#5ab4ac"),labels = c("No Fraud", "Fraud"))+
+  labs(title = "Original Train data")
+
+ggplot(data=down_train)+
+  geom_point(mapping = aes(x=Time,y=Amount,color=Class))+
+  scale_colour_manual(values = c("#d8b365", "#5ab4ac"),labels = c("No Fraud", "Fraud"))+
+  labs(title = "Undersampling Method")
+
+ggplot(data=up_train)+
+  geom_point(mapping = aes(x=Time,y=Amount,color=Class))+
+  scale_colour_manual(values = c("#d8b365", "#5ab4ac"),labels = c("No Fraud", "Fraud"))+
+  labs(title = "Oversampling Method")
+
+ggplot(data=rose_train)+
+  geom_point(mapping = aes(x=Time,y=Amount,color=Class))+
+  scale_colour_manual(values = c("#d8b365", "#5ab4ac"),labels = c("No Fraud", "Fraud"))+
+  labs(title = "ROSE Method")+
+  facet_grid(Class~.)
+
+ggplot(data=smote_train)+
+  geom_point(mapping = aes(x=Time,y=Amount,color=Class))+
+  scale_colour_manual(values = c("#d8b365", "#5ab4ac"),labels = c("No Fraud", "Fraud"))+
+  labs(title = "SMOTE Method")
+
+library(rpart)
+library(rpart.plot)
+
+
+# Building the Decision tree Model 
+set.seed(100)
+original.fit <- rpart(Class~.,data=train,method="class")
+down.fit <- rpart(Class~.,data=down_train,method="class")
+up.fit <- rpart(Class~.,data=up_train,method="class")
+rose.fit <- rpart(Class~.,data=rose_train,method="class")
+smote.fit <- rpart(Class~.,data=smote_train,method="class")
+
+# make predictions on test data
+set.seed(100)
+original.pred <- predict(original.fit,newdata=test,type = "prob")
+down.pred <- predict(down.fit,newdata=test,type = "prob")
+up.pred <- predict(object = up.fit,newdata = test,type = "prob")
+smote.pred <- predict(smote.fit,newdata=test,type = "prob")
+
+# AUC score
+par(mfrow = c(2,2))
+
+roc.curve(test$Class,original.pred[,2],col = "RED",main = "ROC curve of Origina data")
+Area under the curve (AUC): 0.889
+roc.curve(test$Class,down.pred[,2],col = "ORANGE",main = "ROC curve of Down Method")
+Area under the curve (AUC): 0.931
+roc.curve(test$Class,up.pred[,2],col = "BLUE", main = "ROC curve of Up Method")
+Area under the curve (AUC): 0.952
+roc.curve(test$Class,smote.pred[,2],col = "BLACK", main = "ROC curve of SMOTE Method")
+Area under the curve (AUC): 0.951
+
+par(mfrow=c(1,1))
+rpart.plot(original.fit)
+rpart.plot(down.fit)
+rpart.plot(up.fit)
+rpart.plot(smote.fit)
+#SMOTE was chosen with highest AUC ROC score 
+
+# Run the random forest model
+library(randomForest)
+rf.fit <- randomForest(Class~.,data=smote_train, ntree=500)
+
+rf.pred <- predict(rf.fit,newdata = test,type="prob")
+
+roc.curve(test$Class,rf.pred[,2],main = "ROC curve of Random Forest")
+Area under the curve (AUC): 0.982
+
+
+varImpPlot(rf.fit)
+importance(rf.fit)
+
+print(rf.fit)
+
+Call:
+  randomForest(formula = Class ~ ., data = smote_train, ntree = 500) 
+Type of random forest: classification
+Number of trees: 500
+No. of variables tried at each split: 5
+
+OOB estimate of  error rate: 2.81%
+Confusion matrix:
+  No Fraud Fraud class.error
+No Fraud     1287    13  0.01000000
+Fraud          51   924  0.05230769
+
+floor(sqrt(ncol(train)))
+
+mtry <- tuneRF(smote_train[,-31],smote_train$Class,ntreeTry = 500,stepFactor = 1.5,improve = 0.01,trace = TRUE,plot = TRUE)
+
+best.m <- mtry[mtry[,2] == min(mtry[,2]),1]
+
+print(mtry)
+print(best.m)
+
+#Build model again using best mtry value
+rf <- randomForest(Class~.,data=smote_train,ntree=500,mtry = best.m)
+
+Call:
+  randomForest(formula = Class ~ ., data = smote_train, ntree = 500,      mtry = best.m) 
+Type of random forest: classification
+Number of trees: 500
+No. of variables tried at each split: 4
+
+OOB estimate of  error rate: 2.64%
+Confusion matrix:
+  No Fraud Fraud class.error
+No Fraud     1292     8 0.006153846
+Fraud          52   923 0.053333333
+
+varImpPlot(rf)
+important <- importance(rf)
+
+
+rf.pred1 <- predict(rf,newdata = test[,-31],type="prob")
+
+library(ROCR)
+perf <- prediction(rf.pred1[,2],test$Class)
+
+# Area under curve (AUC)
+auc = performance(perf,"auc")
+print(auc)
+# True Positive and Negative rate
+pred3 = performance(perf,"tpr","fpr")
+
+# Plot the ROC curve
+plot(pred3,main="ROC curve for Random Forest",col=2,lwd=2)
+abline(a=0,b=1,lwd=2,lty=2,col="gray")
+
+# OR
+
+roc.curve(test$Class,rf.pred1[,2],main = "ROC curve of Random Forest")
+Area under the curve (AUC): 0.979
+
